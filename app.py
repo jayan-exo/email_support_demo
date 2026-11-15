@@ -64,8 +64,12 @@ with st.sidebar:
     groq_key = ""
     groq_model = os.getenv("GROQ_MODEL", DEFAULT_GROQ_MODEL)
     if drafter.startswith("Groq"):
-        groq_key = st.text_input("Groq API key", type="password", value=os.getenv("GROQ_API_KEY", ""),
-                                 help="Kept in local session memory only; never stored in the demo DB.")
+        groq_key = os.getenv("GROQ_API_KEY", "")
+
+        if groq_key:
+            st.caption("Groq API configured securely on server.")
+        else:
+            st.warning("Configure GROQ_API_KEY in Streamlit secrets.")
         groq_model = st.text_input("Groq model", value=groq_model)
         if not groq_key:
             st.warning("Add your Groq key to enable live reply generation. The app never silently switches modes.")
