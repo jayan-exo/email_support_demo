@@ -1,6 +1,7 @@
 """Run with: streamlit run app.py --server.address 127.0.0.1"""
 from __future__ import annotations
 
+import hmac
 import json
 import os
 from collections import Counter
@@ -14,8 +15,8 @@ from core import (
     SearchIndex, WorkflowStore, grounded_template, load_csv, propose_offline, priority_guardrail,
 )
 from providers import (
-    DEFAULT_OPENJEV_BASE, DEFAULT_OPENJEV_MODEL, DEFAULT_OLLAMA_BASE,
-    DEFAULT_OLLAMA_MODEL, DEFAULT_GROQ_MODEL, ProviderError, classify_openjev, draft_ollama, draft_groq,
+    DEFAULT_OLLAMA_BASE, DEFAULT_OLLAMA_MODEL, DEFAULT_GROQ_MODEL,
+    ProviderError, classify_groq, draft_ollama, draft_groq,
 )
 
 st.set_page_config(page_title="SupportFlow | Human-reviewed Email AI", page_icon="📨", layout="wide")
@@ -25,6 +26,24 @@ st.markdown("""
 h1 { letter-spacing: -0.035em; }
 [data-testid="stMetric"] { border: 1px solid rgba(128,128,128,0.22); border-radius: 12px; padding: 10px 16px; }
 </style>""", unsafe_allow_html=True)
+
+# A minimal demo access gate (not corporate authentication). Configure the secret
+# SUPPORTFLOW_DEMO_PASSWORD on public Streamlit Cloud deployments to avoid anonymous
+# consumption of the shared Groq API quota. Never persist the provided password.
+demo_password = os.getenv("SUPPORTFLOW_DEMO_PASSWORD", "")
+if demo_password and not st.session_state.get("supportflow_demo_access", False):
+    st.title("SupportFlow demo access")
+    st.info("This is a shared demonstration environment using synthetic support emails.")
+    with st.form("demo_access"):
+        entered_password = st.text_input("Demo access password", type="password")
+        submitted = st.form_submit_button("Enter demo", type="primary")
+    if submitted:
+        if hmac.compare_digest(entered_password, demo_password):
+            st.session_state["supportflow_demo_access"] = True
+            st.rerun()
+        else:
+            st.error("Incorrect demo password.")
+    st.stop()
 
 
 @st.cache_data(show_spinner=False)
@@ -48,32 +67,31 @@ with st.sidebar:
     st.info("SYNTHETIC DATA ONLY. No email sending tool exists in this app.")
     reviewer = st.text_input("Human reviewer", value="Demo Reviewer")
     st.subheader("Classification engine")
-    classifier = st.radio("Choose mode", ["Offline illustrative rules", "OpenJev API (real)"], index=0,
-                          help="Offline rules do not run an AI model. OpenJev mode makes a real network call and requires an API key unless served locally.")
-    openjev_key = ""
-    openjev_base = os.getenv("OPENJEV_BASE_URL", DEFAULT_OPENJEV_BASE)
-    openjev_model = os.getenv("OPENJEV_MODEL", DEFAULT_OPENJEV_MODEL)
-    if classifier.startswith("OpenJev"):
-        openjev_key = st.text_input("OpenJev API key", type="password", value=os.getenv("OPENJEV_API_KEY", ""))
-        openjev_base = st.text_input("OpenJev base URL", value=openjev_base)
-        openjev_model = st.text_input("OpenJev model", value=openjev_model)
-        st.caption("This sends the selected synthetic email to the configured OpenJev endpoint.")
-    st.subheader("Reply drafting engine")
-    drafter = st.radio("Choose drafting mode", ["Groq API (real)", "Grounded template (offline)", "Ollama local LLM (real)"], index=(0 if os.getenv("GROQ_API_KEY") else 1),
-                      help="Template is not LLM-generated. Ollama uses a separately installed local language model.")
-    groq_key = ""
+    groq_key = os.getenv("GROQ_API_KEY", "")
     groq_model = os.getenv("GROQ_MODEL", DEFAULT_GROQ_MODEL)
-    if drafter.startswith("Groq"):
-        groq_key = os.getenv("GROQ_API_KEY", "")
-
+    classifier = st.radio(
+        "Choose classification mode",
+        ["Groq API (real AI)", "Offline illustrative rules"],
+        index=(0 if groq_key else 1),
+        help="Groq provides a structured, human-reviewed AI proposal. Offline rules are not AI.",
+    )
+    st.subheader("Reply drafting engine")
+    drafter = st.radio(
+        "Choose drafting mode",
+        ["Groq API (real)", "Grounded template (offline)", "Ollama local LLM (real)"],
+        index=(0 if groq_key else 1),
+        help="Groq creates a draft, not a sent email. The template is deterministic, not AI.",
+    )
+    if classifier.startswith("Groq") or drafter.startswith("Groq"):
         if groq_key:
-            st.caption("Groq API configured securely on server.")
+            st.success("Groq API key configured server-side (not displayed in the browser).")
         else:
-            st.warning("Configure GROQ_API_KEY in Streamlit secrets.")
-        groq_model = st.text_input("Groq model", value=groq_model)
-        if not groq_key:
-            st.warning("Add your Groq key to enable live reply generation. The app never silently switches modes.")
-        st.caption("This sends the synthetic email and top 3 synthetic historical cases to Groq.")
+            st.warning("GROQ_API_KEY is missing. Add it to Streamlit Cloud Secrets or your local environment.")
+        groq_model = st.text_input(
+            "Groq model (both AI tasks)", value=groq_model,
+            help="openai/gpt-oss-20b supports strict structured classification outputs.",
+        )
+        st.caption("Only synthetic data may be sent to Groq in this demo; classification and drafting are distinct API calls.")
     ollama_base = os.getenv("OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE)
     ollama_model = os.getenv("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL)
     if drafter.startswith("Ollama"):
@@ -143,9 +161,11 @@ with process_tab:
         if st.button("1. Propose priority and category", type="primary"):
             try:
                 with st.spinner("Analyzing the email..."):
-                    if classifier.startswith("OpenJev"):
-                        proposal = classify_openjev(ticket["subject"], ticket["body"],
-                                                    api_key=openjev_key, base_url=openjev_base, model=openjev_model)
+                    if classifier.startswith("Groq"):
+                        proposal = classify_groq(
+                            ticket["subject"], ticket["body"],
+                            api_key=groq_key, model=groq_model,
+                        )
                     else:
                         proposal = propose_offline(ticket["subject"], ticket["body"])
                     store.propose(choice, proposal)
@@ -160,8 +180,11 @@ with process_tab:
         if proposal.get("raw_model_priority"):
             st.warning(f"Business rule escalated model proposal from {proposal['raw_model_priority']} to {proposal['priority']} for human review.")
         if proposal.get("model_confidence") is not None:
-            st.caption(f"OpenJev distribution concentration: {proposal['model_confidence']:.3f} (not verified classification accuracy)")
-        st.caption("Evidence: " + (" · ".join(proposal["signals"]) if proposal["signals"] else "No explicit signal captured"))
+            st.caption(f"Provider confidence indicator: {proposal['model_confidence']:.3f} (NOT calibrated accuracy)")
+        st.write("**Why this classification was proposed:** " + proposal.get("explanation", "No rationale available."))
+        st.caption("Reported impact signals: " + (" · ".join(proposal["signals"]) if proposal["signals"] else "None identified"))
+        if proposal["source"].startswith("Groq"):
+            st.caption("Structured-output format was validated. Priority correctness still requires human review.")
         with st.form(key=f"priority_review_{choice}"):
             selected_priority = st.selectbox("Human-approved priority", PRIORITIES,
                                              index=PRIORITIES.index(proposal["priority"]),
@@ -266,7 +289,7 @@ with kb_tab:
 
 with eval_tab:
     st.subheader("Synthetic evaluation — offline baseline")
-    st.caption("This evaluates hand-written demonstration rules against hand-labeled synthetic examples; it is NOT an OpenJev benchmark and says nothing about company email accuracy.")
+    st.caption("This evaluates hand-written offline rules against synthetic examples; it is NOT a Groq accuracy evaluation or a company benchmark.")
     from evaluation import evaluate_offline
     report = evaluate_offline(incoming)
     m = st.columns(3)
@@ -290,7 +313,7 @@ with design_tab:
 INCOMING EMAIL (synthetic)
         |
         v
-[OpenJev: typed priority + category proposals]  <--- offline rule fallback for demo
+[Groq: structured P0-P3 + category AI proposal]  <--- offline rule fallback
         |
         v
 [HUMAN GATE #1: change / approve priority and category]
@@ -300,7 +323,7 @@ INCOMING EMAIL (synthetic)
     | Tenant access filters | Valid runbook only |
         |
         v
-[Groq hosted LLM: grounded reply draft]  <--- local Ollama or template alternative
+[Groq hosted LLM: evidence-grounded reply]  <--- local Ollama or template alternative
         |
         v
 [HUMAN GATE #2: edit / approve or reject draft]
@@ -311,4 +334,4 @@ INCOMING EMAIL (synthetic)
 PRODUCTION ONLY: approved sending integration with separate authorization
 """, language="text")
     st.markdown("**The colleague's 'tree structure':** `priority → issue category → facility/product → historical solved cases → approved diagnostic steps` is a hierarchical index/taxonomy. The old fixes live in the searchable knowledge base, not hard-coded in tree branches.")
-    st.markdown("**This demo deliberately does not:** read PST/EML archives, perform true semantic search, authenticate corporate reviewers, run OpenJev without a configured service, call Groq without your key, or send customer emails.")
+    st.markdown("**This demo deliberately does not:** ingest PST/EML archives, use production hybrid search, authenticate corporate reviewers, send customer emails, or use a Groq API key unless configured server-side. The OpenJev adapter is inactive while its hosted service is unavailable.")
