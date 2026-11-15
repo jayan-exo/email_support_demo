@@ -1,0 +1,38 @@
+
+SUPPORTFLOW DEMO — STRICTLY SYNTHETIC
+==================================================
+Mode: SIMULATED HUMAN TEST (NOT A LIVE APPROVAL)
+Ticket: IN-001 | Northline Logistics
+Subject: All users report servers down
+Customer email: Every team at Facility N2 receives a servers down message in the portal. Nobody can log in and all dock operations have stopped.
+
+Gate 1: Classification proposal (offline rules, NOT OpenJev)
+Proposed priority/category: P0 / platform_outage
+Evidence: High-impact guardrail: widespread service failure / site-wide shutdown; Topic match: widespread server failure
+
+Classification was TEST-SIMULATED
+Top historical evidence (same customer/tenant and verified):
+  - CASE-0073 | All portal users cannot connect at Facility N2 | score 0.748
+  - CASE-0181 | All portal users cannot connect at Plant S1 | score 0.496
+  - CASE-0271 | All portal users cannot connect at Plant S1 | score 0.496
+
+Gate 2: Reply draft awaiting human review:
+
+Hello,
+
+Thank you for contacting the support team.
+
+We understand that you are reporting: All users report servers down.
+
+We understand this may affect site-wide operations. We are treating the report as critical and will confirm the impact and escalation path with the on-call team.
+
+For an initial diagnostic check, our support team can have the on-call infrastructure team check the gateway health and the active certificate, and confirm the scope of the outage.
+
+Could you confirm the affected facility, approximate time of the issue, and any relevant error message (without sending passwords or secrets)?
+
+Kind regards,
+Support Team
+
+Final state: DRAFT_APPROVED — UNSENT
+Audit events: ['CLASSIFICATION_PROPOSED', 'CLASSIFICATION_APPROVED', 'DRAFT_CREATED', 'DRAFT_APPROVED']
+Note: no OpenJev, LLM, or email sending was invoked in this credential-free smoke demo.

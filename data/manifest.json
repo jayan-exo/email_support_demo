@@ -1,0 +1,14 @@
+{
+  "dataset_id": "synthetic-email-support-2026-10-v1",
+  "synthetic": true,
+  "month": "2026-10",
+  "seed": 20261113,
+  "generator_version": "1.0.0",
+  "resolved_case_count": 288,
+  "incoming_example_count": 12,
+  "artifacts": {
+    "resolved_cases_oct_2026.csv": "fdf6c7a74303c529ae52e18528163b50a1eb53b483cfa2f4e3c4b9bf8bf06162",
+    "incoming_examples.csv": "2ff932c2f181b06663350b56e1a029bde0b21aa8a1d9887144b57cae1c7d4983"
+  },
+  "caution": "Not actual customer data. Synthetic priority labels and resolutions are illustrative; not an accuracy benchmark."
+}

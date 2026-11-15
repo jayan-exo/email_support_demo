@@ -1,0 +1,17 @@
+# Security: no real support emails, keys, attachments or database artifacts in git.
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+.local/
+__pycache__/
+.pytest_cache/
+.venv/
+*.pyc
+.DS_Store
+reports/
+private_data/
+raw_emails/
+*.eml
+*.pst
+*.mbox
